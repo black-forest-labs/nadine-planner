@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Week Planner - Robin's Calendar</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0f172a; color: #e2e8f0; }
+
+.top-bar {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 16px 24px; background: #1e293b; border-bottom: 1px solid #334155;
+}
+.top-bar h1 { font-size: 20px; font-weight: 600; }
+.top-bar .score-badge {
+    display: flex; align-items: center; gap: 8px;
+    background: #334155; padding: 8px 16px; border-radius: 8px;
+}
+.score-num { font-size: 28px; font-weight: 700; }
+.score-label { font-size: 12px; color: #94a3b8; }
+.btn {
+    padding: 8px 16px; border-radius: 6px; border: none;
+    background: #3b82f6; color: white; font-size: 14px; cursor: pointer;
+    display: flex; align-items: center; gap: 6px;
+}
+.btn:hover { background: #2563eb; }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn .spinner { display: none; width: 14px; height: 14px; border: 2px solid #fff4; border-top-color: #fff; border-radius: 50%; animation: spin 0.6s linear infinite; }
+.btn.loading .spinner { display: block; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.tabs {
+    display: flex; gap: 0; background: #1e293b; padding: 0 24px;
+    border-bottom: 1px solid #334155;
+}
+.tab {
+    padding: 12px 20px; cursor: pointer; font-size: 14px; font-weight: 500;
+    color: #94a3b8; border-bottom: 2px solid transparent; transition: all 0.2s;
+}
+.tab:hover { color: #e2e8f0; }
+.tab.active { color: #3b82f6; border-bottom-color: #3b82f6; }
+
+.tab-content { display: none; padding: 24px; }
+.tab-content.active { display: block; }
+
+/* KPI Trends */
+.kpi-grid {
+    display: flex; flex-direction: column; gap: 8px;
+}
+.kpi-card {
+    background: #1e293b; border-radius: 8px; padding: 10px 16px;
+    border: 1px solid #334155;
+    display: flex; align-items: center; gap: 16px;
+}
+.kpi-info { min-width: 160px; flex-shrink: 0; }
+.kpi-info h3 { font-size: 11px; color: #94a3b8; margin-bottom: 2px; text-transform: uppercase; letter-spacing: 0.5px; }
+.kpi-info .current { font-size: 20px; font-weight: 700; display: inline; }
+.kpi-info .target-info { font-size: 11px; color: #64748b; display: inline; margin-left: 4px; }
+.kpi-chart { flex: 1; height: 40px; }
+
+/* Week View */
+.week-header {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 16px;
+}
+.week-header h2 { font-size: 18px; }
+.week-stats {
+    display: flex; gap: 10px; flex-wrap: wrap;
+}
+.week-stat {
+    text-align: center; background: #1e293b; padding: 8px 14px; border-radius: 8px;
+    border: 1px solid #334155;
+}
+.week-stat.met { border-color: #10b98155; background: #10b98112; }
+.week-stat.warn { border-color: #f59e0b55; background: #f59e0b12; }
+.week-stat.bad { border-color: #ef444455; background: #ef444412; }
+.week-stat .val { font-size: 18px; font-weight: 700; }
+.week-stat .tgt { font-size: 10px; color: #64748b; }
+.week-stat .lbl { font-size: 11px; color: #94a3b8; }
+
+.day-grid {
+    display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px;
+}
+.day-col {
+    background: #1e293b; border-radius: 12px; overflow: hidden;
+    border: 1px solid #334155;
+}
+.day-col.today { border-color: #3b82f6; }
+.day-header {
+    padding: 10px 12px; background: #334155; font-weight: 600; font-size: 13px;
+    display: flex; justify-content: space-between;
+}
+.day-header .hours { color: #94a3b8; font-weight: 400; }
+.timeline {
+    position: relative; height: 550px; padding: 0 8px;
+}
+.time-marker {
+    position: absolute; left: 0; right: 0; border-top: 1px solid #1e293b;
+    font-size: 9px; color: #475569; padding-left: 4px;
+}
+.meeting-block {
+    position: absolute; left: 8px; right: 8px; border-radius: 4px;
+    padding: 3px 6px; font-size: 11px; overflow: hidden;
+    cursor: default; z-index: 2;
+}
+.meeting-block.type-1-1 { background: #1d4ed8; border-left: 3px solid #3b82f6; }
+.meeting-block.type-small_group { background: #7c3aed; border-left: 3px solid #a78bfa; }
+.meeting-block.type-large { background: #b45309; border-left: 3px solid #f59e0b; }
+.meeting-block .mtitle { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.meeting-block .mtime { font-size: 9px; color: #cbd5e1; }
+
+.free-block {
+    position: absolute; left: 8px; right: 8px; border-radius: 4px;
+    background: #064e3b44; border: 1px dashed #10b98155;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 10px; color: #10b981; z-index: 1;
+}
+
+.legend {
+    display: flex; gap: 16px; margin-top: 16px; justify-content: center;
+}
+.legend-item { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #94a3b8; }
+.legend-dot { width: 12px; height: 12px; border-radius: 3px; }
+
+.fetched-at { text-align: center; margin-top: 16px; font-size: 12px; color: #475569; }
+
+@media (max-width: 900px) {
+    .day-grid { grid-template-columns: repeat(3, 1fr); }
+}
+</style>
+</head>
+<body>
+
+<div class="top-bar">
+    <h1>Week Planner</h1>
+    <div class="score-badge">
+        <div>
+            <div class="score-num" id="weekScore">--</div>
+            <div class="score-label">This Week Score</div>
+        </div>
+    </div>
+    <button class="btn" id="refreshBtn" onclick="refresh()">
+        <span class="spinner"></span>
+        Refresh
+    </button>
+    <span id="lastUpdated" style="font-size:12px;color:#64748b"></span>
+</div>
+
+<div class="tabs">
+    <div class="tab active" data-tab="trends">KPI Trends</div>
+    <div class="tab" data-tab="thisweek">This Week</div>
+    <div class="tab" data-tab="nextweek">Next Week</div>
+</div>
+
+<div class="tab-content active" id="tab-trends">
+    <div class="kpi-grid" id="kpiGrid"></div>
+</div>
+
+<div class="tab-content" id="tab-thisweek">
+    <div id="thisWeekView"></div>
+</div>
+
+<div class="tab-content" id="tab-nextweek">
+    <div id="nextWeekView"></div>
+</div>
+
+<div class="fetched-at" id="fetchedAt"></div>
+
+<script>
+const BAKED_DATA = {"fetched_at": "2026-03-10T20:35:59.923828", "today": "2026-03-10", "targets": {"meeting_count": 30, "meeting_hours": 20, "avg_duration": 35, "bundling_rate": 70, "free_days": 1, "focus_blocks": 3}, "baselines": {"meeting_count": 45, "meeting_hours": 30, "avg_duration": 50, "bundling_rate": 40, "free_days": 0, "focus_blocks": 0}, "weekly_kpis": [{"week": "2025-12-08", "label": "Dec 08", "meeting_count": 38, "meeting_hours": 37.0, "avg_duration": 58, "bundling_rate": 84, "free_days": 0, "focus_blocks": 6, "score": 41}, {"week": "2025-12-15", "label": "Dec 15", "meeting_count": 59, "meeting_hours": 34.5, "avg_duration": 35, "bundling_rate": 83, "free_days": 0, "focus_blocks": 3, "score": 50}, {"week": "2025-12-22", "label": "Dec 22", "meeting_count": 18, "meeting_hours": 7.2, "avg_duration": 24, "bundling_rate": 50, "free_days": 1, "focus_blocks": 5, "score": 89}, {"week": "2025-12-29", "label": "Dec 29", "meeting_count": 3, "meeting_hours": 1.8, "avg_duration": 35, "bundling_rate": 0, "free_days": 3, "focus_blocks": 5, "score": 83}, {"week": "2026-01-05", "label": "Jan 05", "meeting_count": 38, "meeting_hours": 19.2, "avg_duration": 30, "bundling_rate": 63, "free_days": 0, "focus_blocks": 7, "score": 71}, {"week": "2026-01-12", "label": "Jan 12", "meeting_count": 56, "meeting_hours": 49.7, "avg_duration": 53, "bundling_rate": 79, "free_days": 0, "focus_blocks": 1, "score": 22}, {"week": "2026-01-19", "label": "Jan 19", "meeting_count": 27, "meeting_hours": 26.8, "avg_duration": 59, "bundling_rate": 70, "free_days": 1, "focus_blocks": 4, "score": 72}, {"week": "2026-01-26", "label": "Jan 26", "meeting_count": 58, "meeting_hours": 58.3, "avg_duration": 60, "bundling_rate": 84, "free_days": 0, "focus_blocks": 3, "score": 33}, {"week": "2026-02-02", "label": "Feb 02", "meeting_count": 50, "meeting_hours": 75.3, "avg_duration": 90, "bundling_rate": 80, "free_days": 0, "focus_blocks": 2, "score": 28}, {"week": "2026-02-09", "label": "Feb 09", "meeting_count": 48, "meeting_hours": 32.9, "avg_duration": 41, "bundling_rate": 77, "free_days": 0, "focus_blocks": 2, "score": 38}, {"week": "2026-02-16", "label": "Feb 16", "meeting_count": 54, "meeting_hours": 34.3, "avg_duration": 38, "bundling_rate": 63, "free_days": 0, "focus_blocks": 3, "score": 43}, {"week": "2026-02-23", "label": "Feb 23", "meeting_count": 56, "meeting_hours": 41.6, "avg_duration": 45, "bundling_rate": 86, "free_days": 0, "focus_blocks": 2, "score": 33}, {"week": "2026-03-02", "label": "Mar 02", "meeting_count": 44, "meeting_hours": 27.2, "avg_duration": 37, "bundling_rate": 84, "free_days": 1, "focus_blocks": 2, "score": 65}, {"week": "2026-03-09", "label": "Mar 09", "meeting_count": 48, "meeting_hours": 30.3, "avg_duration": 38, "bundling_rate": 71, "free_days": 0, "focus_blocks": 2, "score": 41}], "this_week": {"dates": ["2026-03-09", "2026-03-10", "2026-03-11", "2026-03-12", "2026-03-13"], "days": [{"date": "2026-03-09", "meetings": [{"start": "2026-03-09T10:30:00+01:00", "end": "2026-03-09T10:45:00+01:00", "start_hour": 10.5, "end_hour": 10.75, "date": "2026-03-09", "weekday": 0, "duration": 15, "title": "Check-In", "attendee_count": 3, "meeting_type": "small_group", "is_recurring": true}, {"start": "2026-03-09T11:00:00+01:00", "end": "2026-03-09T11:30:00+01:00", "start_hour": 11.0, "end_hour": 11.5, "date": "2026-03-09", "weekday": 0, "duration": 30, "title": "Nadine & Robin  weekly connect ", "attendee_count": 2, "meeting_type": "1:1", "is_recurring": true}, {"start": "2026-03-09T11:30:00+01:00", "end": "2026-03-09T12:00:00+01:00", "start_hour": 11.5, "end_hour": 12.0, "date": "2026-03-09", "weekday": 0, "duration": 30, "title": "zemmehocke", "attendee_count": 2, "meeting_type": "1:1", "is_recurring": true}, {"start": "2026-03-09T12:00:00+01:00", "end": "2026-03-09T12:45:00+01:00", "start_hour": 12.0, "end_hour": 12.75, "date": "2026-03-09", "weekday": 0, "duration": 45, "title": "Hila : Bi-Annual Review", "attendee_count": 2, "meeting_type": "1:1", "is_recurring": false}, {"start": "2026-03-09T15:00:00+01:00", "end": "2026-03-09T15:20:00+01:00", "start_hour": 15.0, "end_hour": 15.333333333333334, "date": "2026-03-09", "weekday": 0, "duration": 20, "title": "Kaylee x Robin ", "attendee_count": 3, "meeting_type": "small_group", "is_recurring": false}, {"start": "2026-03-09T16:40:00+01:00", "end": "2026-03-09T17:00:00+01:00", "start_hour": 16.666666666666668, "end_hour": 17.0, "date": "2026-03-09", "weekday": 0, "duration": 20, "title": "Dave / Robin Weekly", "attendee_count": 2, "meeting_type": "1:1", "is_recurring": true}, {"start": "2026-03-09T17:00:00+01:00", "end": "2026-03-09T17:15:00+01:00", "start_hour": 17.0, "end_hour": 17.25, "date": "2026-03-09", "weekday": 0, "duration": 15, "title": "Bryan / Robin", "attendee_count": 2, "meeting_type": "1:1", "is_recurring": false}, {"start": "2026-03-09T17:30:00+01:00", "end": "2026-03-09T17:50:00+01:00", "start_hour": 17.5, "end_hour": 17.833333333333332, "date": "2026-03-09", "weekday": 0, "duration": 20, "title": "Sumith / Robin", "attendee_count": 2, "meeting_type": "1:1", "is_recurring": true}, {"start": "2026-03-09T18:30:00+01:00", "end": "2026-03-09T19:00:00+01:00", "start_hour": 18.5, "end_hour": 19.0, "date": "2026-03-09", "weekday": 0, "duration": 30, "title": "BFL Monthly Update PART 2 (Values & Operating Principles) ", "attendee_count": 14, "meeting_type": "large", "is_recurring": false}, {"start": "2026-03-09T19:00:00+01:00", "end": "2026-03-09T19:30:00+01:00", "start_hour": 19.0, "end_hour": 19.5, "date": "2026-03-09", "weekday": 0, "duration": 30, "title": "marketing strategy sync", "attendee_count": 4, "meeting_type": "small_group", "is_recurring": false}, {"start": "2026-03-09T19:30:00+01:00", "end": "2026-03-09T20:00:00+01:00", "start_hour": 19.5, "end_hour": 20.0, "date": "2026-03-09", "weekday": 0, "duration": 30, "title": "Adam <> Ben + Robin in last 15 to discuss a16 podcast", "attendee_count": 3, "meeting_type": "small_group", "is_recurring": true}, {"start": "2026-03-09T19:30:00+01:00", "end": "2026-03-09T19:45:00+01:00", "start_hour": 19.5, "end_hour": 19.75, "date": "2026-03-09", "weekday": 0, "duration": 15, "title": "Snap sync ", "attendee_count": 3, "meeting_type": "small_group", "is_recurring": false}, {"start": "2026-03-09T21:30:00+01:00", "end": "2026-03-09T22:00:00+01:00", "start_hour": 21.5, "end_hour": 22.0, "date": "2026-03-09", "weekday": 0, "duration": 30, "title": "Counceling", "attendee_count": 6, "meeting_type": "large", "is_recurring": true}, {"start": "2026-03-09T22:00:00+01:00", "end": "2026-03-09T22:30:00+01:00", "start_hour": 22.0, "end_hour": 22.5, "date": "2026-03-09", "weekday": 0, "duration": 30, "title": "BFL", "attendee_count": 14, "meeting_type": "large", "is_recurring": true}, {"start": "2026-03-09T22:30:00+01:00", "end": "2026-03-09T22:45:00+01:00", "start_hour": 22.5, "end_hour": 22.75, "date": "2026-03-09", "weekday": 0, "duration": 15, "title": "Tim / Robin Check-In", "attendee_count": 2, "meeting_type": "1:1", "is_recurring": true}, {"start": "2026-03-09T22:45:00+01:00", "end": "2026-03-09T23:15:00+01:00", "start_hour": 22.75, "end_hour": 23.25, "date": "2026-03-09", "weekday": 0, "duration": 30, "title": "Robin / Dustin Check-In", "attendee_count": 2, "meeting_type": "1:1", "is_recurring": true}], "meeting_count": 16, "meeting_hours": 6.8, "free_blocks": [{"start": 8.0, "end": 10.5, "hours": 2.5}, {"start": 12.75, "end": 15.0, "hours": 2.2}, {"start": 15.333333333333334, "end": 16.666666666666668, "hours": 1.3}, {"start": 17.833333333333332, "end": 18.5, "hours": 0.7}], "focus_hours": 0}, {"date": "2026-03-10", "meetings": [{"start": "2026-03-10T10:30:00+01:00", "end": "2026-03-10T10:45:00+01:00", "start_hour": 10.5, "end_hour": 10.75, "date": "2026-03-10", "weekday": 1, "duration": 15, "title": "Check-In", "attendee_count": 3, "meeting_type": "small_group", "is_recurring": true}, {"start": "2026-03-10T11:00:00+01:00", "end": "2026-03-10T11:30:00+01:00", "start_hour": 11.0, "end_hour": 11.5, "date": "2026-03-10", "weekday": 1, "duration": 30, "title": "Robin <> Adam", "attendee_count": 2, "meeting_type": "1:1", "is_recurring": true}, {"start": "2026-03-10T13:20:00+01:00", "end": "2026-03-10T13:50:00+01:00", "start_hour": 13.333333333333334, "end_hour": 13.833333333333334, "date": "2026-03-10", "weekday": 1, "duration": 30, "title": "Nadine : Bi-Annual Review", "attendee_count": 2, "meeting_type": "1:1", "is_recurring": false}, {"start": "2026-03-10T14:15:00+01:00", "end": "2026-03-10T15:00:00+01:00", "start_hour": 14.25, "end_hour": 15.0, "date": "2026-03-10", "weekday": 1, "duration": 45, "title": "Patrick x Robin : halbj\u00e4hrliche Review", "attendee_count": 2, "meeting_type": "1:1", "is_recurring": false}, {"start": "2026-03-10T16:30:00+01:00", "end": "2026-03-10T17:00:00+01:00", "start_hour": 16.5, "end_hour": 17.0, "date": "2026-03-10", "weekday": 1, "duration": 30, "title": "Interview Annie Guan", "attendee_count": 2, "meeting_type": "1:1", "is_recurring": false}, {"start": "2026-03-10T19:00:00+01:00", "end": "2026-03-10T20:00:00+01:00", "start_hour": 19.0, "end_hour": 20.0, "date": "2026-03-10", "weekday": 1, "duration": 60, "title": "GTM Team meeting", "attendee_count": 10, "meeting_type": "large", "is_recurring": true}], "meeting_count": 6, "meeting_hours": 3.5, "free_blocks": [{"start": 8.0, "end": 10.5, "hours": 2.5}, {"start": 11.5, "end": 13.333333333333334, "hours": 1.8}, {"start": 15.0, "end": 16.5, "hours": 1.5}, {"start": 17.0, "end": 19.0, "hours": 2.0}], "focus_hours": 0}, {"date": "2026-03-11", "meetings": [{"start": "2026-03-11T08:45:00+01:00", "end": "2026-03-11T09:45:00+01:00", "start_hour": 8.75, "end_hour": 9.75, "date": "2026-03-11", "weekday": 2, "duration": 60, "title": "Gym.", "attendee_count": 3, "meeting_type": "small_group", "is_recurring": true}, {"start": "2026-03-11T10:30:00+01:00", "end": "2026-03-11T10:45:00+01:00", "start_hour": 10.5, "end_hour": 10.75, "date": "2026-03-11", "weekday": 2, "duration": 15, "title": "Check-In", "attendee_count": 3, "meeting_type": "small_group", "is_recurring": true}, {"start": "2026-03-11T15:30:00+01:00", "end": "2026-03-11T16:00:00+01:00", "start_hour": 15.5, "end_hour": 16.0, "date": "2026-03-11", "weekday": 2, "duration": 30, "title": "Ravi/Robin", "attendee_count": 2, "meeting_type": "1:1", "is_recurring": false}, {"start": "2026-03-11T16:00:00+01:00", "end": "2026-03-11T16:30:00+01:00", "start_hour": 16.0, "end_hour": 16.5, "date": "2026-03-11", "weekday": 2, "duration": 30, "title": "Virtual: BFL Weekly Board Sync", "attendee_count": 8, "meeting_type": "large", "is_recurring": true}, {"start": "2026-03-11T16:30:00+01:00", "end": "2026-03-11T16:45:00+01:00", "start_hour": 16.5, "end_hour": 16.75, "date": "2026-03-11", "weekday": 2, "duration": 15, "title": "Internal Fluxtral Sync", "attendee_count": 8, "meeting_type": "large", "is_recurring": true}, {"start": "2026-03-11T17:00:00+01:00", "end": "2026-03-11T17:30:00+01:00", "start_hour": 17.0, "end_hour": 17.5, "date": "2026-03-11", "weekday": 2, "duration": 30, "title": "BFL <> Mistral Weekly", "attendee_count": 9, "meeting_type": "large", "is_recurring": true}, {"start": "2026-03-11T17:15:00+01:00", "end": "2026-03-11T17:35:00+01:00", "start_hour": 17.25, "end_hour": 17.583333333333332, "date": "2026-03-11", "weekday": 2, "duration": 20, "title": "Robin / Kyle weekly", "attendee_count": 2, "meeting_type": "1:1", "is_recurring": true}, {"start": "2026-03-11T18:00:00+01:00", "end": "2026-03-11T18:30:00+01:00", "start_hour": 18.0, "end_hour": 18.5, "date": "2026-03-11", "weekday": 2, "duration": 30, "title": "Weekly Product Strategy", "attendee_count": 7, "meeting_type": "large", "is_recurring": true}, {"start": "2026-03-11T18:30:00+01:00", "end": "2026-03-11T19:00:00+01:00", "start_hour": 18.5, "end_hour": 19.0, "date": "2026-03-11", "weekday": 2, "duration": 30, "title": "Cofounder Sync", "attendee_count": 3, "meeting_type": "small_group", "is_recurring": true}, {"start": "2026-03-11T19:00:00+01:00", "end": "2026-03-11T19:30:00+01:00", "start_hour": 19.0, "end_hour": 19.5, "date": "2026-03-11", "weekday": 2, "duration": 30, "title": "BFL", "attendee_count": 14, "meeting_type": "large", "is_recurring": true}, {"start": "2026-03-11T19:30:00+01:00", "end": "2026-03-11T19:55:00+01:00", "start_hour": 19.5, "end_hour": 19.916666666666668, "date": "2026-03-11", "weekday": 2, "duration": 25, "title": "Brief catch up in person", "attendee_count": 2, "meeting_type": "1:1", "is_recurring": false}, {"start": "2026-03-11T20:00:00+01:00", "end": "2026-03-11T20:30:00+01:00", "start_hour": 20.0, "end_hour": 20.5, "date": "2026-03-11", "weekday": 2, "duration": 30, "title": "Anthony x Robin weekly connect (in person) ", "attendee_count": 2, "meeting_type": "1:1", "is_recurring": false}, {"start": "2026-03-11T20:00:00+01:00", "end": "2026-03-11T22:00:00+01:00", "start_hour": 20.0, "end_hour": 22.0, "date": "2026-03-11", "weekday": 2, "duration": 120, "title": "Caf\u00e9 Danz - team dinner <3", "attendee_count": 8, "meeting_type": "large", "is_recurring": false}], "meeting_count": 13, "meeting_hours": 7.8, "free_blocks": [{"start": 8.0, "end": 8.75, "hours": 0.8}, {"start": 9.75, "end": 10.5, "hours": 0.8}, {"start": 10.75, "end": 15.5, "hours": 4.8}], "focus_hours": 4.8}, {"date": "2026-03-12", "meetings": [{"start": "2026-03-12T03:45:00+01:00", "end": "2026-03-12T06:00:00+01:00", "start_hour": 3.75, "end_hour": 6.0, "date": "2026-03-12", "weekday": 3, "duration": 135, "title": "Taxi & Airport Time ", "attendee_count": 3, "meeting_type": "small_group", "is_recurring": false}, {"start": "2026-03-12T10:30:00+01:00", "end": "2026-03-12T10:45:00+01:00", "start_hour": 10.5, "end_hour": 10.75, "date": "2026-03-12", "weekday": 3, "duration": 15, "title": "Check-In", "attendee_count": 3, "meeting_type": "small_group", "is_recurring": true}, {"start": "2026-03-12T16:45:00+01:00", "end": "2026-03-12T17:05:00+01:00", "start_hour": 16.75, "end_hour": 17.083333333333332, "date": "2026-03-12", "weekday": 3, "duration": 20, "title": "hila / robin", "attendee_count": 2, "meeting_type": "1:1", "is_recurring": true}, {"start": "2026-03-12T18:00:00+01:00", "end": "2026-03-12T18:30:00+01:00", "start_hour": 18.0, "end_hour": 18.5, "date": "2026-03-12", "weekday": 3, "duration": 30, "title": "BFL Demo Day", "attendee_count": 9, "meeting_type": "large", "is_recurring": true}, {"start": "2026-03-12T19:30:00+01:00", "end": "2026-03-12T22:00:00+01:00", "start_hour": 19.5, "end_hour": 22.0, "date": "2026-03-12", "weekday": 3, "duration": 150, "title": "Bouldering", "attendee_count": 5, "meeting_type": "small_group", "is_recurring": true}, {"start": "2026-03-12T19:30:00+01:00", "end": "2026-03-12T21:30:00+01:00", "start_hour": 19.5, "end_hour": 21.5, "date": "2026-03-12", "weekday": 3, "duration": 120, "title": "Carlotta Restaurant Reservation ", "attendee_count": 10, "meeting_type": "large", "is_recurring": false}], "meeting_count": 6, "meeting_hours": 7.8, "free_blocks": [{"start": 8.0, "end": 10.5, "hours": 2.5}, {"start": 10.75, "end": 16.75, "hours": 6.0}, {"start": 17.083333333333332, "end": 18.0, "hours": 0.9}], "focus_hours": 6.0}, {"date": "2026-03-13", "meetings": [{"start": "2026-03-13T10:00:00+01:00", "end": "2026-03-13T10:30:00+01:00", "start_hour": 10.0, "end_hour": 10.5, "date": "2026-03-13", "weekday": 4, "duration": 30, "title": "[HOLD] Devran interview (Design Lead)", "attendee_count": 2, "meeting_type": "1:1", "is_recurring": false}, {"start": "2026-03-13T10:30:00+01:00", "end": "2026-03-13T10:45:00+01:00", "start_hour": 10.5, "end_hour": 10.75, "date": "2026-03-13", "weekday": 4, "duration": 15, "title": "Check-In", "attendee_count": 3, "meeting_type": "small_group", "is_recurring": true}, {"start": "2026-03-13T11:15:00+01:00", "end": "2026-03-13T12:00:00+01:00", "start_hour": 11.25, "end_hour": 12.0, "date": "2026-03-13", "weekday": 4, "duration": 45, "title": "Adam Bi-Annual Review", "attendee_count": 2, "meeting_type": "1:1", "is_recurring": false}, {"start": "2026-03-13T12:15:00+01:00", "end": "2026-03-13T13:00:00+01:00", "start_hour": 12.25, "end_hour": 13.0, "date": "2026-03-13", "weekday": 4, "duration": 45, "title": "Dave : Bi-Annual Review", "attendee_count": 2, "meeting_type": "1:1", "is_recurring": false}, {"start": "2026-03-13T13:30:00+01:00", "end": "2026-03-13T14:15:00+01:00", "start_hour": 13.5, "end_hour": 14.25, "date": "2026-03-13", "weekday": 4, "duration": 45, "title": "Sarah : Bi-Annual Review", "attendee_count": 2, "meeting_type": "1:1", "is_recurring": false}, {"start": "2026-03-13T15:30:00+01:00", "end": "2026-03-13T16:30:00+01:00", "start_hour": 15.5, "end_hour": 16.5, "date": "2026-03-13", "weekday": 4, "duration": 60, "title": "Kaylee x Robin (in person, London)", "attendee_count": 3, "meeting_type": "small_group", "is_recurring": false}, {"start": "2026-03-13T17:00:00+01:00", "end": "2026-03-13T17:30:00+01:00", "start_hour": 17.0, "end_hour": 17.5, "date": "2026-03-13", "weekday": 4, "duration": 30, "title": "Robin x Michael call ", "attendee_count": 2, "meeting_type": "1:1", "is_recurring": false}], "meeting_count": 7, "meeting_hours": 4.5, "free_blocks": [{"start": 8.0, "end": 10.0, "hours": 2.0}, {"start": 10.75, "end": 11.25, "hours": 0.5}, {"start": 13.0, "end": 13.5, "hours": 0.5}, {"start": 14.25, "end": 15.5, "hours": 1.2}, {"start": 16.5, "end": 17.0, "hours": 0.5}, {"start": 17.5, "end": 19.0, "hours": 1.5}], "focus_hours": 0}], "kpis": {"meeting_count": 48, "meeting_hours": 30.3, "avg_duration": 38, "bundling_rate": 71, "free_days": 0, "focus_blocks": 2}, "score": 41}, "next_week": {"dates": ["2026-03-16", "2026-03-17", "2026-03-18", "2026-03-19", "2026-03-20"], "days": [{"date": "2026-03-16", "meetings": [{"start": "2026-03-16T14:15:00+01:00", "end": "2026-03-16T15:00:00+01:00", "start_hour": 14.25, "end_hour": 15.0, "date": "2026-03-16", "weekday": 0, "duration": 45, "title": "Weekly Sarah <> Robin", "attendee_count": 2, "meeting_type": "1:1", "is_recurring": true}, {"start": "2026-03-16T16:30:00+01:00", "end": "2026-03-16T17:35:00+01:00", "start_hour": 16.5, "end_hour": 17.583333333333332, "date": "2026-03-16", "weekday": 0, "duration": 65, "title": "8:30 AM Call Time | GTC Pregame - Chapter 3 Guests", "attendee_count": 17, "meeting_type": "large", "is_recurring": false}, {"start": "2026-03-16T22:30:00+01:00", "end": "2026-03-16T22:45:00+01:00", "start_hour": 22.5, "end_hour": 22.75, "date": "2026-03-16", "weekday": 0, "duration": 15, "title": "Tim / Robin Check-In", "attendee_count": 2, "meeting_type": "1:1", "is_recurring": true}, {"start": "2026-03-16T22:45:00+01:00", "end": "2026-03-16T23:15:00+01:00", "start_hour": 22.75, "end_hour": 23.25, "date": "2026-03-16", "weekday": 0, "duration": 30, "title": "Robin / Dustin Check-In", "attendee_count": 2, "meeting_type": "1:1", "is_recurring": true}], "meeting_count": 4, "meeting_hours": 2.6, "free_blocks": [{"start": 8.0, "end": 14.25, "hours": 6.2}, {"start": 15.0, "end": 16.5, "hours": 1.5}], "focus_hours": 6.2}, {"date": "2026-03-17", "meetings": [{"start": "2026-03-17T16:00:00+01:00", "end": "2026-03-17T22:00:00+01:00", "start_hour": 16.0, "end_hour": 22.0, "date": "2026-03-17", "weekday": 1, "duration": 360, "title": "unifying-the-multimodalities-day ", "attendee_count": 3, "meeting_type": "small_group", "is_recurring": false}, {"start": "2026-03-17T17:00:00+01:00", "end": "2026-03-17T17:20:00+01:00", "start_hour": 17.0, "end_hour": 17.333333333333332, "date": "2026-03-17", "weekday": 1, "duration": 20, "title": "Robin / Kyle weekly", "attendee_count": 2, "meeting_type": "1:1", "is_recurring": true}, {"start": "2026-03-17T18:00:00+01:00", "end": "2026-03-17T19:00:00+01:00", "start_hour": 18.0, "end_hour": 19.0, "date": "2026-03-17", "weekday": 1, "duration": 60, "title": "GTM Team meeting", "attendee_count": 10, "meeting_type": "large", "is_recurring": true}], "meeting_count": 3, "meeting_hours": 7.3, "free_blocks": [{"start": 8.0, "end": 16.0, "hours": 8.0}], "focus_hours": 8.0}, {"date": "2026-03-18", "meetings": [{"start": "2026-03-18T04:45:00+01:00", "end": "2026-03-18T06:45:00+01:00", "start_hour": 4.75, "end_hour": 6.75, "date": "2026-03-18", "weekday": 2, "duration": 120, "title": "BFL Dinner (Karaage & Udon)", "attendee_count": 7, "meeting_type": "large", "is_recurring": false}, {"start": "2026-03-18T15:00:00+01:00", "end": "2026-03-18T15:30:00+01:00", "start_hour": 15.0, "end_hour": 15.5, "date": "2026-03-18", "weekday": 2, "duration": 30, "title": "Axel / Robin: Weekly Synk   ", "attendee_count": 2, "meeting_type": "1:1", "is_recurring": true}, {"start": "2026-03-18T16:00:00+01:00", "end": "2026-03-18T16:30:00+01:00", "start_hour": 16.0, "end_hour": 16.5, "date": "2026-03-18", "weekday": 2, "duration": 30, "title": "Virtual: BFL Weekly Board Sync", "attendee_count": 8, "meeting_type": "large", "is_recurring": true}, {"start": "2026-03-18T16:30:00+01:00", "end": "2026-03-18T16:45:00+01:00", "start_hour": 16.5, "end_hour": 16.75, "date": "2026-03-18", "weekday": 2, "duration": 15, "title": "Internal Fluxtral Sync", "attendee_count": 8, "meeting_type": "large", "is_recurring": true}, {"start": "2026-03-18T17:00:00+01:00", "end": "2026-03-18T17:30:00+01:00", "start_hour": 17.0, "end_hour": 17.5, "date": "2026-03-18", "weekday": 2, "duration": 30, "title": "BFL <> Mistral Weekly", "attendee_count": 9, "meeting_type": "large", "is_recurring": true}, {"start": "2026-03-18T18:00:00+01:00", "end": "2026-03-18T18:30:00+01:00", "start_hour": 18.0, "end_hour": 18.5, "date": "2026-03-18", "weekday": 2, "duration": 30, "title": "Weekly Product Strategy", "attendee_count": 7, "meeting_type": "large", "is_recurring": true}, {"start": "2026-03-18T18:30:00+01:00", "end": "2026-03-18T19:00:00+01:00", "start_hour": 18.5, "end_hour": 19.0, "date": "2026-03-18", "weekday": 2, "duration": 30, "title": "Cofounder Sync", "attendee_count": 3, "meeting_type": "small_group", "is_recurring": true}, {"start": "2026-03-18T19:00:00+01:00", "end": "2026-03-18T19:30:00+01:00", "start_hour": 19.0, "end_hour": 19.5, "date": "2026-03-18", "weekday": 2, "duration": 30, "title": "BFL", "attendee_count": 14, "meeting_type": "large", "is_recurring": true}, {"start": "2026-03-18T19:00:00+01:00", "end": "2026-03-18T19:15:00+01:00", "start_hour": 19.0, "end_hour": 19.25, "date": "2026-03-18", "weekday": 2, "duration": 15, "title": "Sync ", "attendee_count": 4, "meeting_type": "small_group", "is_recurring": false}, {"start": "2026-03-18T19:30:00+01:00", "end": "2026-03-18T20:00:00+01:00", "start_hour": 19.5, "end_hour": 20.0, "date": "2026-03-18", "weekday": 2, "duration": 30, "title": "Anthony x Robin weekly connect (Note: Robin at GTC) ", "attendee_count": 2, "meeting_type": "1:1", "is_recurring": false}], "meeting_count": 10, "meeting_hours": 6.0, "free_blocks": [{"start": 8.0, "end": 15.0, "hours": 7.0}, {"start": 15.5, "end": 16.0, "hours": 0.5}, {"start": 17.5, "end": 18.0, "hours": 0.5}], "focus_hours": 7.0}, {"date": "2026-03-19", "meetings": [{"start": "2026-03-19T01:00:00+01:00", "end": "2026-03-19T01:30:00+01:00", "start_hour": 1.0, "end_hour": 1.5, "date": "2026-03-19", "weekday": 3, "duration": 30, "title": "Connect BFL and M&E Leadership", "attendee_count": 10, "meeting_type": "large", "is_recurring": false}, {"start": "2026-03-19T03:00:00+01:00", "end": "2026-03-19T07:00:00+01:00", "start_hour": 3.0, "end_hour": 7.0, "date": "2026-03-19", "weekday": 3, "duration": 240, "title": "Nvidia x BFL Team Dinner - Left Bank Santana Row", "attendee_count": 17, "meeting_type": "large", "is_recurring": false}, {"start": "2026-03-19T16:45:00+01:00", "end": "2026-03-19T17:05:00+01:00", "start_hour": 16.75, "end_hour": 17.083333333333332, "date": "2026-03-19", "weekday": 3, "duration": 20, "title": "hila / robin", "attendee_count": 2, "meeting_type": "1:1", "is_recurring": true}, {"start": "2026-03-19T18:00:00+01:00", "end": "2026-03-19T18:30:00+01:00", "start_hour": 18.0, "end_hour": 18.5, "date": "2026-03-19", "weekday": 3, "duration": 30, "title": "BFL Demo Day", "attendee_count": 9, "meeting_type": "large", "is_recurring": true}, {"start": "2026-03-19T19:00:00+01:00", "end": "2026-03-19T19:45:00+01:00", "start_hour": 19.0, "end_hour": 19.75, "date": "2026-03-19", "weekday": 3, "duration": 45, "title": "Sumith : Bi-Annual Review ", "attendee_count": 4, "meeting_type": "small_group", "is_recurring": false}, {"start": "2026-03-19T19:30:00+01:00", "end": "2026-03-19T22:00:00+01:00", "start_hour": 19.5, "end_hour": 22.0, "date": "2026-03-19", "weekday": 3, "duration": 150, "title": "Bouldering", "attendee_count": 5, "meeting_type": "small_group", "is_recurring": true}, {"start": "2026-03-19T21:00:00+01:00", "end": "2026-03-19T21:45:00+01:00", "start_hour": 21.0, "end_hour": 21.75, "date": "2026-03-19", "weekday": 3, "duration": 45, "title": "Zion: Bi-Annual Review ", "attendee_count": 4, "meeting_type": "small_group", "is_recurring": false}], "meeting_count": 7, "meeting_hours": 9.3, "free_blocks": [{"start": 8.0, "end": 16.75, "hours": 8.8}, {"start": 17.083333333333332, "end": 18.0, "hours": 0.9}, {"start": 18.5, "end": 19.0, "hours": 0.5}], "focus_hours": 8.8}, {"date": "2026-03-20", "meetings": [{"start": "2026-03-20T02:00:00+01:00", "end": "2026-03-20T04:00:00+01:00", "start_hour": 2.0, "end_hour": 4.0, "date": "2026-03-20", "weekday": 4, "duration": 120, "title": "SF Team Dinner with Robin and Amanda", "attendee_count": 5, "meeting_type": "small_group", "is_recurring": false}], "meeting_count": 1, "meeting_hours": 2.0, "free_blocks": [{"start": 8.0, "end": 19.0, "hours": 11.0}], "focus_hours": 11.0}], "kpis": {"meeting_count": 25, "meeting_hours": 27.2, "avg_duration": 65, "bundling_rate": 60, "free_days": 0, "focus_blocks": 5}, "score": 49}};
+let DATA = null;
+const STATIC_MODE = typeof BAKED_DATA !== 'undefined';
+const charts = {};
+
+const KPI_CONFIG = {
+    meeting_count: { label: 'Meetings / Week', unit: '', lowerBetter: true },
+    meeting_hours: { label: 'Meeting Hours', unit: 'h', lowerBetter: true },
+    avg_duration:  { label: 'Avg Duration', unit: 'min', lowerBetter: true },
+    bundling_rate: { label: 'Bundling Rate', unit: '%', lowerBetter: false },
+    free_days:     { label: 'Meeting-Free Days', unit: '', lowerBetter: false },
+    focus_blocks:  { label: '3h+ Focus Blocks', unit: '', lowerBetter: false },
+};
+
+const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+const DAY_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
+
+// Tabs
+document.querySelectorAll('.tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
+    });
+});
+
+async function refresh() {
+    if (STATIC_MODE) {
+        DATA = BAKED_DATA;
+        render();
+        document.getElementById('refreshBtn').style.display = 'none';
+        return;
+    }
+    const btn = document.getElementById('refreshBtn');
+    btn.classList.add('loading');
+    btn.disabled = true;
+    try {
+        const res = await fetch('/api/calendar');
+        DATA = await res.json();
+        render();
+    } catch (e) {
+        console.error('Fetch failed:', e);
+    } finally {
+        btn.classList.remove('loading');
+        btn.disabled = false;
+    }
+}
+
+function render() {
+    if (!DATA) return;
+
+    // Week score
+    document.getElementById('weekScore').textContent = DATA.this_week.score;
+    const scoreEl = document.querySelector('.score-num');
+    scoreEl.style.color = DATA.this_week.score >= 70 ? '#10b981' : DATA.this_week.score >= 40 ? '#f59e0b' : '#ef4444';
+
+    document.getElementById('fetchedAt').textContent = 'Data fetched: ' + new Date(DATA.fetched_at).toLocaleString();
+
+    renderKPITrends();
+    renderWeekView('thisWeekView', DATA.this_week, 'This Week');
+    renderWeekView('nextWeekView', DATA.next_week, 'Next Week');
+}
+
+function renderKPITrends() {
+    const grid = document.getElementById('kpiGrid');
+    grid.innerHTML = '';
+
+    // Use last 12 weeks for charts
+    const weeks = DATA.weekly_kpis.slice(-12);
+
+    for (const [key, cfg] of Object.entries(KPI_CONFIG)) {
+        const card = document.createElement('div');
+        card.className = 'kpi-card';
+
+        const current = DATA.this_week.kpis[key];
+        const target = DATA.targets[key];
+        const met = cfg.lowerBetter ? current <= target : current >= target;
+
+        card.innerHTML = `
+            <div class="kpi-info">
+                <h3>${cfg.label}</h3>
+                <div class="current" style="color: ${met ? '#10b981' : '#f59e0b'}">${current}${cfg.unit}</div>
+                <div class="target-info">/ ${target}${cfg.unit}</div>
+            </div>
+            <div class="kpi-chart"><canvas></canvas></div>
+        `;
+        grid.appendChild(card);
+
+        // Destroy old chart
+        if (charts[key]) charts[key].destroy();
+
+        const canvas = card.querySelector('canvas');
+        const ctx = canvas.getContext('2d');
+        const values = weeks.map(w => w[key]);
+        const colors = values.map(v => {
+            if (cfg.lowerBetter) return v <= target ? '#10b981' : v <= target * 1.2 ? '#f59e0b' : '#ef4444';
+            return v >= target ? '#10b981' : v >= target * 0.8 ? '#f59e0b' : '#ef4444';
+        });
+
+        charts[key] = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: weeks.map(w => w.label),
+                datasets: [{
+                    data: values,
+                    backgroundColor: colors.map(c => c + '88'),
+                    borderColor: colors,
+                    borderWidth: 1,
+                    borderRadius: 2,
+                    barPercentage: 0.7,
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                layout: { padding: 0 },
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: { label: (c) => c.raw + cfg.unit + ' (target: ' + target + cfg.unit + ')' }
+                    },
+                },
+                scales: {
+                    x: { display: false },
+                    y: { display: false, beginAtZero: true },
+                },
+            },
+            plugins: [{
+                id: 'targetLine',
+                afterDraw(chart) {
+                    const yScale = chart.scales.y;
+                    const y = yScale.getPixelForValue(target);
+                    const cx = chart.ctx;
+                    cx.save();
+                    cx.strokeStyle = '#94a3b8';
+                    cx.lineWidth = 1;
+                    cx.setLineDash([3, 3]);
+                    cx.beginPath();
+                    cx.moveTo(chart.chartArea.left, y);
+                    cx.lineTo(chart.chartArea.right, y);
+                    cx.stroke();
+                    cx.restore();
+                }
+            }],
+        });
+    }
+}
+
+function fmtHour(h) {
+    const hr = Math.floor(h);
+    const mn = Math.round((h - hr) * 60);
+    return `${hr}:${mn.toString().padStart(2, '0')}`;
+}
+
+function kpiSignal(key, value) {
+    const t = DATA.targets[key];
+    const cfg = KPI_CONFIG[key];
+    if (cfg.lowerBetter) {
+        if (value <= t) return 'met';
+        if (value <= t * 1.2) return 'warn';
+        return 'bad';
+    }
+    if (value >= t) return 'met';
+    if (value >= t * 0.7) return 'warn';
+    return 'bad';
+}
+
+function renderWeekView(containerId, weekData, title) {
+    const container = document.getElementById(containerId);
+    const k = weekData.kpis;
+    const T = DATA.targets;
+
+    const stats = [
+        { key: 'meeting_count', val: k.meeting_count, unit: '', tgt: T.meeting_count, label: 'Meetings' },
+        { key: 'meeting_hours', val: k.meeting_hours, unit: 'h', tgt: T.meeting_hours + 'h', label: 'Hours' },
+        { key: 'avg_duration', val: k.avg_duration, unit: 'm', tgt: T.avg_duration + 'm', label: 'Avg Duration' },
+        { key: 'bundling_rate', val: k.bundling_rate, unit: '%', tgt: T.bundling_rate + '%', label: 'Bundled' },
+        { key: 'free_days', val: k.free_days, unit: '', tgt: T.free_days, label: 'Free Days' },
+        { key: 'focus_blocks', val: k.focus_blocks, unit: '', tgt: T.focus_blocks, label: 'Focus 3h+' },
+    ];
+
+    const statCards = stats.map(s => {
+        const sig = kpiSignal(s.key, s.val);
+        const color = sig === 'met' ? '#10b981' : sig === 'warn' ? '#f59e0b' : '#ef4444';
+        return `<div class="week-stat ${sig}"><div class="val" style="color:${color}">${s.val}${s.unit}</div><div class="tgt">target: ${s.tgt}</div><div class="lbl">${s.label}</div></div>`;
+    }).join('');
+
+    const scoreColor = weekData.score >= 70 ? '#10b981' : weekData.score >= 40 ? '#f59e0b' : '#ef4444';
+
+    let statsHtml = `
+        <div class="week-header">
+            <h2>${title} <span style="font-size:13px;color:#64748b">${weekData.dates[0]} to ${weekData.dates[4]}</span></h2>
+            <div class="week-stats">
+                ${statCards}
+                <div class="week-stat" style="border-color:${scoreColor}55;background:${scoreColor}12">
+                    <div class="val" style="color:${scoreColor}">${weekData.score}</div>
+                    <div class="lbl">Score</div>
+                </div>
+            </div>
+        </div>
+    `;
+
+    const HOUR_START = 8;
+    const HOUR_END = 19;
+    const TOTAL_HOURS = HOUR_END - HOUR_START;
+    const PX_PER_HOUR = 550 / TOTAL_HOURS;
+
+    let daysHtml = '<div class="day-grid">';
+    weekData.days.forEach((day, i) => {
+        const isToday = day.date === DATA.today;
+        daysHtml += `<div class="day-col${isToday ? ' today' : ''}">`;
+        daysHtml += `<div class="day-header"><span>${DAY_SHORT[i]} ${day.date.slice(5)}</span><span class="hours">${day.meeting_hours}h</span></div>`;
+        daysHtml += `<div class="timeline">`;
+
+        // Time markers
+        for (let h = HOUR_START; h <= HOUR_END; h++) {
+            const top = (h - HOUR_START) * PX_PER_HOUR;
+            daysHtml += `<div class="time-marker" style="top:${top}px">${h}:00</div>`;
+        }
+
+        // Free blocks
+        day.free_blocks.forEach(fb => {
+            const top = (Math.max(fb.start, HOUR_START) - HOUR_START) * PX_PER_HOUR;
+            const height = (Math.min(fb.end, HOUR_END) - Math.max(fb.start, HOUR_START)) * PX_PER_HOUR;
+            if (height > 10) {
+                daysHtml += `<div class="free-block" style="top:${top}px;height:${height}px">${fb.hours}h free</div>`;
+            }
+        });
+
+        // Meeting blocks
+        day.meetings.forEach(m => {
+            const startH = Math.max(m.start_hour, HOUR_START);
+            const endH = Math.min(m.end_hour, HOUR_END);
+            const top = (startH - HOUR_START) * PX_PER_HOUR;
+            const height = Math.max((endH - startH) * PX_PER_HOUR, 18);
+            daysHtml += `<div class="meeting-block type-${m.meeting_type}" style="top:${top}px;height:${height}px" title="${m.title} (${fmtHour(m.start_hour)}-${fmtHour(m.end_hour)})">`;
+            daysHtml += `<div class="mtitle">${m.title}</div>`;
+            if (height > 30) daysHtml += `<div class="mtime">${fmtHour(m.start_hour)}-${fmtHour(m.end_hour)}</div>`;
+            daysHtml += `</div>`;
+        });
+
+        daysHtml += `</div></div>`;
+    });
+    daysHtml += '</div>';
+
+    let legendHtml = `
+        <div class="legend">
+            <div class="legend-item"><div class="legend-dot" style="background:#1d4ed8"></div>1:1</div>
+            <div class="legend-item"><div class="legend-dot" style="background:#7c3aed"></div>Small Group (3-5)</div>
+            <div class="legend-item"><div class="legend-dot" style="background:#b45309"></div>Large (6+)</div>
+            <div class="legend-item"><div class="legend-dot" style="background:#064e3b;border:1px dashed #10b981"></div>Free Block</div>
+        </div>
+    `;
+
+    container.innerHTML = statsHtml + daysHtml + legendHtml;
+}
+
+// Initial load + auto-refresh every 15 minutes
+refresh();
+setInterval(refresh, 15 * 60 * 1000);
+</script>
+</body>
+</html>
